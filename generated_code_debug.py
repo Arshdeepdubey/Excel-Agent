@@ -1,0 +1,1 @@
+new_df = df[df['Status'] != 'Closed']

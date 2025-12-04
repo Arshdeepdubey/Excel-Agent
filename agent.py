@@ -7,6 +7,7 @@ from typing import Optional
 from ollama import Client as OllamaClient
 import uuid
 from datetime import datetime
+import numpy as np
 
 
 # ============================================================
@@ -70,15 +71,30 @@ def run_generated_code(code: str, df: pd.DataFrame) -> pd.DataFrame:
     if (code.startswith('"') and code.endswith('"')) or (code.startswith("'") and code.endswith("'")):
         code = code[1:-1]
 
-    code = code.replace("df.append(", "pd.concat([df, pd.DataFrame([")
-    if "pd.concat([df, pd.DataFrame([" in code:
-        code = re.sub(
-            r"pd\.concat\(\[df, pd\.DataFrame\(\[(.*?)\]\)(.*?)\)\)",
-            r"pd.concat([df, pd.DataFrame([\1])], ignore_index=True)",
-            code
-        )
+    # Fix df.append() calls - convert to pd.concat() properly
+    # Handle cases where df.append() contains dictionary data
+    code = re.sub(
+        r"df\.append\(\s*pd\.DataFrame\(\s*\[\s*({[^}]+})\s*\]\s*\)\s*,?\s*ignore_index\s*=\s*True\s*\)",
+        r"df = pd.concat([df, pd.DataFrame([\1])], ignore_index=True)",
+        code,
+        flags=re.MULTILINE | re.DOTALL
+    )
+    
+    # Fallback for simpler df.append patterns
+    code = re.sub(
+        r"df\.append\(\s*({[^}]+})\s*,?\s*ignore_index\s*=\s*True\s*\)",
+        r"df = pd.concat([df, pd.DataFrame([\1])], ignore_index=True)",
+        code,
+        flags=re.MULTILINE | re.DOTALL
+    )
 
-    local = {"df": df, "pd": pd}
+    local = {"df": df, "pd": pd, "np": np}
+    
+    # Helper function for creating columns with conditions
+    def create_column_with_condition(col_name, values_dict):
+        """Helper to create a column with conditional values"""
+        df[col_name] = df['Name'].apply(lambda x: values_dict.get(x, values_dict.get('default', None)))
+    
     globals_safe = {
         "__builtins__": {
             "len": len, "range": range, "min": min, "max": max,
@@ -154,13 +170,40 @@ def main(task: str, model: str, input_path: str, output_path: str, inplace: bool
     df = pd.read_excel(input_path)
 
     prompt = (
-        "You are given a pandas DataFrame named df. Return only Python code that modifies df and ALWAYS assigns "
-        "the final result back to df, e.g., df = df[ ... ]. Do not print anything. Do not write files.\n\n"
-        f"Goal: {task}\n\nColumns: {','.join(df.columns.astype(str))}\n\nPreview:\n{df.head(20).to_csv(index=False)}"
+        "You are a data manipulation expert. You have a pandas DataFrame named 'df' with the following structure:\n\n"
+        f"Columns: {', '.join(df.columns.astype(str))}\n"
+        f"Data types: {df.dtypes.to_dict()}\n"
+        f"Number of rows: {len(df)}\n\n"
+        f"Data preview:\n{df.to_string()}\n\n"
+        "================================================================================\n"
+        "TASK INSTRUCTIONS:\n"
+        "================================================================================\n"
+        "Your task is to modify this DataFrame according to the following requirement:\n"
+        f"{task}\n\n"
+        "CRITICAL REQUIREMENTS FOR CODE GENERATION:\n"
+        "1. Generate ONLY valid, executable Python code - no explanations or markdown\n"
+        "2. The code must be syntactically correct and runnable\n"
+        "3. Always assign the result back to variable 'df' (e.g., df = ... or df[...] = ...)\n"
+        "4. Use proper pandas operations:\n"
+        "   - For adding rows: df = pd.concat([df, pd.DataFrame([{...}])], ignore_index=True)\n"
+        "   - For adding columns: df['new_col'] = value or df.loc[condition, 'col'] = value\n"
+        "   - For filtering: df = df[condition]\n"
+        "   - NEVER use deprecated df.append() method\n"
+        "5. Handle data types correctly (strings, numbers, booleans)\n"
+        "6. Do NOT print anything, write files, or import modules\n"
+        "7. Return ONLY the Python code - no additional text\n"
+        "8. If creating columns, preserve all existing columns and data\n"
+        "9. If assigning values conditionally, use df.loc[condition, 'column'] = value\n"
+        "10. Be precise with string values and data types\n\n"
+        "Generate the Python code now:"
     )
 
     resp = llm_generate(prompt, model)
     code = extract_code(resp)
+    
+    # Log generated code for debugging
+    logging.debug(f"Raw LLM response:\n{resp}\n")
+    logging.debug(f"Extracted code:\n{code}\n")
 
     if dry:
         print("----- Generated Code -----")
@@ -227,20 +270,25 @@ def main(task: str, model: str, input_path: str, output_path: str, inplace: bool
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Excel Agent: Modify Excel files using natural language instructions"
+    )
 
-    parser.add_argument("task", nargs="?", default="", help="Instruction describing how to modify the DataFrame")
-    parser.add_argument("--model", default="llama3")
-    parser.add_argument("--input", default="base.xlsx")
-    parser.add_argument("--output", default="modified_output.xlsx")
-    parser.add_argument("--inplace", action="store_true")
-    parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--create-fixture", action="store_true")
+    parser.add_argument("task", nargs="*", help="Instruction describing how to modify the DataFrame (supports complex strings with special characters)")
+    parser.add_argument("--model", default="llama3", help="LLM model to use (default: llama3)")
+    parser.add_argument("--input", default="base.xlsx", help="Input Excel file (default: base.xlsx)")
+    parser.add_argument("--output", default="modified_output.xlsx", help="Output Excel file prefix (default: modified_output.xlsx)")
+    parser.add_argument("--inplace", action="store_true", help="Overwrite input file instead of creating new file")
+    parser.add_argument("--dry-run", action="store_true", help="Show generated code without executing")
+    parser.add_argument("--create-fixture", action="store_true", help="Create a fixture Excel file for testing")
 
     args = parser.parse_args()
+    
+    # Join task arguments back together since nargs="*" splits on spaces
+    task = " ".join(args.task) if args.task else ""
 
     main(
-        args.task,
+        task,
         args.model,
         args.input,
         args.output,

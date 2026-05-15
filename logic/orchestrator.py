@@ -20,8 +20,8 @@ from pathlib import Path
 from datetime import datetime
 import pandas as pd
 
-# Import from agent in same directory
-from agent import (
+# Import from logic package
+from logic.agent import (
     create_fixture_excel,
     llm_generate,
     extract_code,
@@ -90,11 +90,15 @@ class ExcelAgentOrchestrator:
         Returns:
             Task type: 'add_rows', 'add_columns', 'filter', 'transform', 'custom'
         """
+        import re
         task_lower = task.lower()
         
-        if any(keyword in task_lower for keyword in ['add row', 'insert row', 'new row', 'create.*row']):
+        if any(keyword in task_lower for keyword in ['add row', 'insert row', 'new row', 'create row']) \
+                or re.search(r'create.*row', task_lower):
             return 'add_rows'
-        elif any(keyword in task_lower for keyword in ['add column', 'new column', 'create.*column']):
+        elif any(keyword in task_lower for keyword in ['new column', 'create column', 'add a column', 'add a new column', 'add column']) \
+                or re.search(r'add .+ column', task_lower) \
+                or re.search(r'create.*column', task_lower):
             return 'add_columns'
         elif any(keyword in task_lower for keyword in ['filter', 'remove', 'delete', 'where']):
             return 'filter'
@@ -133,7 +137,7 @@ class ExcelAgentOrchestrator:
             )
         elif task_type == 'add_columns':
             task_specific = (
-                "TASK: Add new columns to the DataFrame\n"
+                "TASK: Add column(s) to the DataFrame\n"
                 f"Requirement: {task}\n\n"
                 "IMPORTANT: Create ALL new columns FIRST, then assign values.\n"
                 "Example pattern:\n"
@@ -348,13 +352,6 @@ def process_excel_with_prompt(
     """
     High-level function to process Excel files with a single natural language prompt.
     
-    This function:
-    1. Analyzes the prompt to determine required operations
-    2. Loads the Excel file
-    3. Executes the operation
-    4. Saves the result
-    5. Returns structured output
-    
     Args:
         prompt: Natural language description of the required operation
         input_file: Path to input Excel file (default: base.xlsx)
@@ -410,25 +407,3 @@ def process_excel_with_prompt(
             "operation_details": operation_result,
             "dataframe": orchestrator.current_df,
         }
-
-
-if __name__ == "__main__":
-    # Example usage
-    print("Excel Agent Orchestrator - Example Usage\n")
-    
-    # Example 1: Single operation
-    print("=" * 80)
-    print("Example 1: Add columns to Excel file")
-    print("=" * 80)
-    
-    result = process_excel_with_prompt(
-        prompt='Add a column called "SnapLogic" with values: "Present" for Bob and Sara, "Not present" for others. Add a column called "Role" with values: "Data Engineer" for Bob and Sara, "Ex-developers" for others.',
-        input_file="/Users/arshdeepdubey/tmp/excel-agent/base.xlsx",
-        output_file="/Users/arshdeepdubey/tmp/excel-agent/modified_output.xlsx",
-    )
-    
-    print(f"\nOperation Success: {result['success']}")
-    if result['success']:
-        print(f"Output File: {result['output_file']}")
-        print(f"Summary: {result['summary']}")
-        print(f"\nDataFrame:\n{result['dataframe'].to_string()}")

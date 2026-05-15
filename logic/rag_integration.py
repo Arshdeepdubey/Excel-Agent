@@ -1,5 +1,5 @@
 """
-RAG Integration Example - Excel Agent in a Retrieval-Augmented Generation Pipeline
+RAG Integration - Excel Agent in a Retrieval-Augmented Generation Pipeline
 
 This module demonstrates how to integrate the Excel Agent as a step within a RAG workflow.
 It shows how to:
@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 import json
 
-from excel_agent_orchestrator import (
+from logic.orchestrator import (
     ExcelAgentOrchestrator,
     process_excel_with_prompt
 )
@@ -142,27 +142,18 @@ class RAGExcelIntegration:
         """
         print(f"\n[RAG] Analyzing query: '{user_query}'")
         
-        # In a real RAG system, this would use semantic search to determine:
-        # 1. What data to load
-        # 2. What operations are needed
-        # 3. How to format results
-        
-        # For this example, we'll do simple pattern matching
         query_lower = user_query.lower()
         
         # Detect operation types
         if any(keyword in query_lower for keyword in ['add', 'create', 'new column']):
-            # Adding columns
             operation = f"Process this request: {user_query}"
             return self.simple_operation(operation, excel_file)
         
         elif any(keyword in query_lower for keyword in ['filter', 'where', 'only show']):
-            # Filtering data
             operation = f"Filter the data according to: {user_query}"
             return self.simple_operation(operation, excel_file)
         
         elif any(keyword in query_lower for keyword in ['analyze', 'check', 'look at']):
-            # Analysis - might need multiple steps
             operations = [
                 f"Add analysis columns based on: {user_query}",
                 "Ensure all relevant columns are populated"
@@ -170,7 +161,6 @@ class RAGExcelIntegration:
             return self.multi_step_operation(operations, excel_file)
         
         else:
-            # Generic operation
             return self.simple_operation(user_query, excel_file)
     
     def get_summary(self) -> Dict[str, Any]:
@@ -182,119 +172,6 @@ class RAGExcelIntegration:
             "failed": len(self.operation_log) - successful,
             "operations": self.operation_log
         }
-
-
-# ============================================================================
-# Example Usage Scenarios
-# ============================================================================
-
-def example_1_simple_column_addition():
-    """Example 1: Add a single column to existing data."""
-    print("\n" + "="*80)
-    print("Example 1: Simple Column Addition")
-    print("="*80)
-    
-    rag = RAGExcelIntegration()
-    
-    result = rag.simple_operation(
-        prompt='Add a column called "Priority" with values: "High" for Quantity > 3, "Low" for others',
-        excel_file="base.xlsx"
-    )
-    
-    if result['success']:
-        print(f"\nOutput: {result['output_file']}")
-        print(f"\nData preview:")
-        print(result['dataframe'].to_string())
-
-
-def example_2_multi_step_enrichment():
-    """Example 2: Multi-step data enrichment workflow."""
-    print("\n" + "="*80)
-    print("Example 2: Multi-Step Data Enrichment")
-    print("="*80)
-    
-    rag = RAGExcelIntegration()
-    
-    operations = [
-        'Add column "SnapLogic" with "Present" for Bob/Sara, "Not present" for others',
-        'Add column "Role" with "Data Engineer" for Bob/Sara, "Ex-developers" for others',
-        'Add column "Team" with "Engineering" for Engineering department, "Other" for others'
-    ]
-    
-    result = rag.multi_step_operation(
-        operations=operations,
-        excel_file="base.xlsx"
-    )
-    
-    if result.get('success'):
-        print(f"\nOutput: {result['output_file']}")
-        print(f"\nFinal data shape: {result['dataframe'].shape}")
-        print(f"\nData preview:")
-        print(result['dataframe'].to_string())
-        print(f"\nSummary: {rag.get_summary()}")
-
-
-def example_3_intelligent_routing():
-    """Example 3: Intelligent query routing."""
-    print("\n" + "="*80)
-    print("Example 3: Intelligent Query Routing")
-    print("="*80)
-    
-    rag = RAGExcelIntegration()
-    
-    # User queries that would come from a chatbot/RAG system
-    queries = [
-        "Add a Verification status for each employee",
-        "Show me only the Engineering department employees",
-        "Analyze which employees are active"
-    ]
-    
-    for query in queries:
-        print(f"\nUser Query: {query}")
-        result = rag.intelligent_routing(
-            user_query=query,
-            excel_file="base.xlsx"
-        )
-        print(f"Status: {'✓ Success' if result.get('success') else '✗ Failed'}")
-
-
-def example_4_rag_pipeline():
-    """Example 4: Full RAG pipeline simulation."""
-    print("\n" + "="*80)
-    print("Example 4: Full RAG Pipeline")
-    print("="*80)
-    
-    print("""
-    Simulated RAG Pipeline:
-    
-    1. User provides query: "Who are the Data Engineers?"
-    2. RAG System:
-       - Retrieves relevant documents (employee list in Excel)
-       - Determines operations needed (filter + add columns)
-       - Routes to Excel Agent
-    3. Excel Agent:
-       - Adds "Role" column
-       - Filters for "Data Engineer"
-    4. Results returned to user
-    """)
-    
-    rag = RAGExcelIntegration()
-    
-    # Simulate a RAG response that determined these operations
-    rag_determined_operations = [
-        'Add column "Role" with "Data Engineer" for employees with Engineering department, "Other" for others',
-        'Keep only rows where Role is "Data Engineer"'
-    ]
-    
-    result = rag.multi_step_operation(
-        operations=rag_determined_operations,
-        excel_file="base.xlsx",
-        output_file="rag_query_result.xlsx"
-    )
-    
-    if result.get('success'):
-        print(f"\n[RAG Result] Found {len(result['dataframe'])} matching records")
-        print(result['dataframe'].to_string())
 
 
 # ============================================================================
@@ -310,9 +187,6 @@ def rag_process_excel(
     """
     High-level function for RAG systems to process Excel files.
     
-    This function is the main entry point for integrating Excel Agent
-    with a RAG system.
-    
     Args:
         user_prompt: Original user query/request
         data_file: Path to Excel data file
@@ -320,42 +194,17 @@ def rag_process_excel(
         model: LLM model to use
         
     Returns:
-        Dictionary containing:
-        - success: bool
-        - output_file: Path to result
-        - dataframe: Processed data as DataFrame
-        - summary: Summary of operations
-        
-    Example:
-        result = rag_process_excel(
-            user_prompt="Add engineer roles to our dataset",
-            data_file="employees.xlsx"
-        )
-        processed_data = result['dataframe']
+        Dictionary containing success, output_file, dataframe, summary
     """
     rag = RAGExcelIntegration(model=model)
     
     if operations:
-        # Use pre-determined operations from RAG
         return rag.multi_step_operation(
             operations=operations,
             excel_file=data_file
         )
     else:
-        # Let orchestrator determine operations from prompt
         return rag.simple_operation(
             prompt=user_prompt,
             excel_file=data_file
         )
-
-
-if __name__ == "__main__":
-    # Run all examples
-    example_1_simple_column_addition()
-    example_2_multi_step_enrichment()
-    example_3_intelligent_routing()
-    example_4_rag_pipeline()
-    
-    print("\n" + "="*80)
-    print("Integration Examples Complete")
-    print("="*80)

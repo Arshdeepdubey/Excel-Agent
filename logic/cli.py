@@ -6,9 +6,9 @@ Command-line interface for the Excel Agent Orchestrator.
 Allows processing Excel files with natural language prompts integrated in RAG workflows.
 
 Usage Examples:
-    python orchestrator_cli.py --prompt "Add columns ..." --input base.xlsx
-    python orchestrator_cli.py --prompt "Filter rows where ..." --input data.xlsx --inplace
-    python orchestrator_cli.py --workflow file_with_operations.json --input base.xlsx
+    python -m logic.cli --prompt "Add columns ..." --input base.xlsx
+    python -m logic.cli --prompt "Filter rows where ..." --input data.xlsx --inplace
+    python -m logic.cli --workflow file_with_operations.json --input base.xlsx
 """
 
 import argparse
@@ -16,7 +16,7 @@ import json
 import sys
 from pathlib import Path
 
-from excel_agent_orchestrator import (
+from logic.orchestrator import (
     ExcelAgentOrchestrator,
     process_excel_with_prompt
 )
@@ -29,18 +29,18 @@ def main():
         epilog="""
 Examples:
   # Single operation
-  python orchestrator_cli.py --prompt "Add column called Active with value Yes for all rows" \\
+  python -m logic.cli --prompt "Add column called Active with value Yes for all rows" \\
                              --input data.xlsx --output result.xlsx
 
   # Workflow with multiple operations
-  python orchestrator_cli.py --workflow operations.json --input data.xlsx
+  python -m logic.cli --workflow operations.json --input data.xlsx
 
   # Dry-run to see generated code
-  python orchestrator_cli.py --prompt "Filter rows where Status is Active" \\
+  python -m logic.cli --prompt "Filter rows where Status is Active" \\
                              --input data.xlsx --dry-run
 
   # In-place modification
-  python orchestrator_cli.py --prompt "Add column Status with value Active" \\
+  python -m logic.cli --prompt "Add column Status with value Active" \\
                              --input data.xlsx --inplace
         """
     )
@@ -145,12 +145,10 @@ Examples:
 
         # Output results
         if args.output_json:
-            # Prepare for JSON serialization
             if 'dataframe' in result and hasattr(result['dataframe'], 'to_dict'):
                 result['dataframe'] = result['dataframe'].to_dict(orient='records')
             print(json.dumps(result, indent=2, default=str))
         else:
-            # Pretty print results
             if result.get('success'):
                 print("\n✓ Operation completed successfully!")
                 if 'output_file' in result:

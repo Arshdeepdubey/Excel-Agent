@@ -10,7 +10,7 @@ import shutil
 import pandas as pd
 import numpy as np
 
-import agent
+import logic.agent as agent
 
 
 class TestInputValidation(unittest.TestCase):
@@ -94,12 +94,10 @@ class TestInjectionPrevention(unittest.TestCase):
             'subprocess.Popen(["rm", "-rf", "/"])',
         ]
         for injection in injections:
-            # Should contain obvious attack pattern
             self.assertTrue(';' in injection or '__import__' in injection or 'Popen' in injection)
 
     def test_safe_lambda_execution(self):
         """Test that safe lambda operations work"""
-        # Safe lambda code
         code = "df['double'] = df['Quantity'].apply(lambda x: x * 2)"
         self.assertIsNotNone(code)
         self.assertIn('lambda', code)

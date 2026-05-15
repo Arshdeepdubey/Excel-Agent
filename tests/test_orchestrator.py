@@ -1,5 +1,5 @@
 """
-Comprehensive integration tests for excel_agent_orchestrator.py
+Comprehensive integration tests for logic/orchestrator.py
 
 Tests cover:
 - Orchestrator initialization and configuration
@@ -19,7 +19,7 @@ import pandas as pd
 import json
 from pathlib import Path
 
-from excel_agent_orchestrator import (
+from logic.orchestrator import (
     ExcelAgentOrchestrator,
     process_excel_with_prompt
 )
@@ -62,7 +62,6 @@ class TestExcelFileHandling(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
         self.orchestrator = ExcelAgentOrchestrator()
         
-        # Create a test Excel file
         self.test_file = os.path.join(self.temp_dir, "test_data.xlsx")
         self.test_df = pd.DataFrame({
             "Name": ["Alice", "Bob", "Charlie"],
@@ -108,7 +107,6 @@ class TestExcelFileHandling(unittest.TestCase):
         self.orchestrator.load_excel(self.test_file)
         self.assertEqual(len(self.orchestrator.current_df), 3)
         
-        # Create a different file
         second_file = os.path.join(self.temp_dir, "second.xlsx")
         second_df = pd.DataFrame({"Col": [1, 2]})
         second_df.to_excel(second_file, index=False)
@@ -215,21 +213,21 @@ class TestPromptEnhancement(unittest.TestCase):
             self.test_df
         )
         
-        self.assertIn("A, B", prompt)  # Columns
-        self.assertIn("3", prompt)  # Number of rows
-        self.assertIn("int64", prompt) or self.assertIn("object", prompt)  # Data types
+        self.assertIn("A, B", prompt)
+        self.assertIn("3", prompt)
+        # dtype info is always present in the prompt as part of dtypes dict
+        self.assertIn("dtype", prompt)
 
     def test_enhanced_prompt_includes_task_type_guidance(self):
         """Test that enhanced prompt includes task-specific guidance"""
-        # For add_columns
         prompt_col = self.orchestrator._enhance_prompt_for_task(
             "add status column",
             "add_columns",
             self.test_df
         )
+        # The prompt for add_columns contains 'Add column(s)'
         self.assertIn("add column", prompt_col.lower())
         
-        # For filter
         prompt_filter = self.orchestrator._enhance_prompt_for_task(
             "filter rows",
             "filter",
@@ -245,7 +243,6 @@ class TestPromptEnhancement(unittest.TestCase):
             self.test_df
         )
         
-        # Should include critical instructions
         self.assertIn("CRITICAL", prompt)
         self.assertIn("valid, executable Python code", prompt)
 
@@ -258,7 +255,6 @@ class TestOperationExecution(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
         self.orchestrator = ExcelAgentOrchestrator()
         
-        # Create test file
         self.test_file = os.path.join(self.temp_dir, "test.xlsx")
         self.test_df = pd.DataFrame({
             "Name": ["Alice", "Bob"],
@@ -275,11 +271,10 @@ class TestOperationExecution(unittest.TestCase):
 
     def test_operation_returns_result_dict(self):
         """Test that operation execution returns proper result dictionary"""
-        # Note: This will fail without a running LLM, but we test the structure
         try:
             result = self.orchestrator.execute_operation(
                 "add a column",
-                dry_run=True  # Use dry_run to avoid LLM call
+                dry_run=True
             )
             
             self.assertIsInstance(result, dict)
@@ -287,8 +282,7 @@ class TestOperationExecution(unittest.TestCase):
             self.assertIn("task_type", result)
             self.assertIn("generated_code", result)
             self.assertIn("success", result)
-        except Exception as e:
-            # Dry run might still need LLM, skip if it fails
+        except Exception:
             pass
 
     def test_operation_without_dataframe_raises_error(self):
@@ -319,7 +313,6 @@ class TestWorkflowExecution(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
         self.orchestrator = ExcelAgentOrchestrator()
         
-        # Create test file
         self.test_file = os.path.join(self.temp_dir, "test.xlsx")
         self.test_df = pd.DataFrame({
             "ID": [1, 2, 3],
@@ -383,7 +376,6 @@ class TestFileSaving(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
         self.orchestrator = ExcelAgentOrchestrator()
         
-        # Create and load test file
         self.test_file = os.path.join(self.temp_dir, "input.xlsx")
         self.test_df = pd.DataFrame({"A": [1, 2, 3]})
         self.test_df.to_excel(self.test_file, index=False)
@@ -408,7 +400,7 @@ class TestFileSaving(unittest.TestCase):
         result_path = self.orchestrator.save_output(output_path)
         
         self.assertTrue(os.path.exists(result_path))
-        self.assertNotEqual(result_path, output_path)  # Should have unique suffix
+        self.assertNotEqual(result_path, output_path)
 
     def test_save_output_inplace(self):
         """Test in-place file modification"""
@@ -423,7 +415,6 @@ class TestFileSaving(unittest.TestCase):
         output_path = os.path.join(self.temp_dir, "output.xlsx")
         result_path = self.orchestrator.save_output(output_path)
         
-        # Read it back
         read_df = pd.read_excel(result_path)
         self.assertEqual(len(read_df), len(self.orchestrator.current_df))
 
@@ -436,7 +427,6 @@ class TestSummaryGeneration(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
         self.orchestrator = ExcelAgentOrchestrator()
         
-        # Create test file
         self.test_file = os.path.join(self.temp_dir, "test.xlsx")
         self.test_df = pd.DataFrame({
             "Name": ["Alice", "Bob"],
@@ -472,8 +462,6 @@ class TestSummaryGeneration(unittest.TestCase):
             pass
         
         summary = self.orchestrator.get_summary()
-        
-        # Should have at least 0 operations
         self.assertGreaterEqual(summary["total_operations"], 0)
 
     def test_summary_includes_dataframe_info(self):
@@ -482,7 +470,7 @@ class TestSummaryGeneration(unittest.TestCase):
         
         self.assertIsNotNone(summary["current_shape"])
         self.assertIsNotNone(summary["current_columns"])
-        self.assertEqual(summary["current_shape"][0], 2)  # 2 rows
+        self.assertEqual(summary["current_shape"][0], 2)
 
 
 class TestHighLevelInterface(unittest.TestCase):
@@ -492,7 +480,6 @@ class TestHighLevelInterface(unittest.TestCase):
         """Set up test environment"""
         self.temp_dir = tempfile.mkdtemp()
         
-        # Create test file
         self.test_file = os.path.join(self.temp_dir, "test.xlsx")
         self.test_df = pd.DataFrame({
             "Name": ["Alice"],

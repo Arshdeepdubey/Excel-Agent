@@ -1,0 +1,79 @@
+name: Excel Agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Natural language instruction (e.g. 'Add employees Bob and Sara with Engineering department')"
+        required: true
+        type: string
+      model:
+        description: "Ollama model to use"
+        required: false
+        default: "gpt-oss:120b-cloud"
+        type: string
+      dry_run:
+        description: "Dry run — show generated code without modifying the Excel file"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  run-excel-agent:
+    name: "Apply: ${{ github.event.inputs.prompt }}"
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # needed to commit the updated Excel back to the repo
+
+    steps:
+      # ── 1. Checkout ─────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 2. Python setup ──────────────────────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install pandas openpyxl ollama
+
+      # ── 3. Run the Excel Agent ───────────────────────────────────────────────
+      #    OLLAMA_HOST points to your remote Ollama server (set as a repo secret).
+      #    The Python ollama client reads this env var automatically.
+      - name: Run Excel Agent
+        env:
+          OLLAMA_HOST: ${{ secrets.OLLAMA_HOST }}
+        run: |
+          DRYRUN_FLAG=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            DRYRUN_FLAG="--dry-run"
+          fi
+
+          python run_agent_ci.py \
+            --prompt "${{ github.event.inputs.prompt }}" \
+            --model "${{ github.event.inputs.model }}" \
+            --output data/excel_output.xlsx \
+            $DRYRUN_FLAG
+
+      # ── 4. Commit the updated Excel back ────────────────────────────────────
+      #    Skipped automatically if nothing changed (e.g. dry run or no-op).
+      - name: Commit and push updated Excel
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add data/excel_output.xlsx
+
+          # Commit only if there are actual changes to the file
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "excel-agent: ${{ github.event.inputs.prompt }}"
+            git push
+          fi
